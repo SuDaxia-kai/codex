@@ -92,6 +92,7 @@ use codex_protocol::protocol::ThreadRolledBackEvent;
 use codex_protocol::protocol::TokenCountEvent;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
+use codex_protocol::protocol::TokenUsageSource;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::UndoCompletedEvent;
@@ -1642,6 +1643,7 @@ async fn context_indicator_shows_used_tokens_when_window_unknown() {
         total_token_usage: token_usage.clone(),
         last_token_usage: token_usage,
         model_context_window: None,
+        source: TokenUsageSource::Actual,
     };
 
     chat.handle_codex_event(Event {
@@ -2025,6 +2027,23 @@ fn make_token_info(total_tokens: i64, context_window: i64) -> TokenUsageInfo {
         total_token_usage: usage(total_tokens),
         last_token_usage: usage(total_tokens),
         model_context_window: Some(context_window),
+        source: TokenUsageSource::Actual,
+    }
+}
+
+fn make_estimated_token_info(total_tokens: i64, context_window: i64) -> TokenUsageInfo {
+    fn usage(total_tokens: i64) -> TokenUsage {
+        TokenUsage {
+            total_tokens,
+            ..TokenUsage::default()
+        }
+    }
+
+    TokenUsageInfo {
+        total_token_usage: usage(total_tokens),
+        last_token_usage: usage(total_tokens),
+        model_context_window: Some(context_window),
+        source: TokenUsageSource::Estimated,
     }
 }
 
@@ -9404,12 +9423,12 @@ async fn default_status_line_uses_model_dir_context_summary() {
     let text = status_line_text(&chat).expect("status line text");
     assert!(text.contains("model: gpt-5.4 high"));
     assert!(text.contains("dir: "));
-    assert!(text.contains("context: ["));
+    assert!(text.contains("context(actual): ["));
     assert!(text.contains("64K/200K"));
 
     let model_idx = text.find("model:").expect("model segment");
     let dir_idx = text.find("dir:").expect("dir segment");
-    let context_idx = text.find("context:").expect("context segment");
+    let context_idx = text.find("context(actual):").expect("context segment");
     assert!(model_idx < dir_idx);
     assert!(dir_idx < context_idx);
     assert!(
@@ -9438,13 +9457,37 @@ async fn default_status_line_footer_renders_context_progress_bar() {
         "expected rendered footer to include dir label: {collapsed}"
     );
     assert!(
-        collapsed.contains("context: ["),
+        collapsed.contains("context(actual): ["),
         "expected rendered footer to include context progress bar: {collapsed}"
     );
     assert!(
         collapsed.contains("64K/200K"),
         "expected rendered footer to include used/total tokens: {collapsed}"
     );
+}
+
+#[tokio::test]
+async fn default_status_line_labels_actual_context_usage() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.set_model("gpt-5.4");
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.set_token_info(Some(make_token_info(64_000, 200_000)));
+    chat.refresh_status_line();
+
+    let text = status_line_text(&chat).expect("status line text");
+    assert!(text.contains("context(actual): ["), "expected actual label: {text}");
+}
+
+#[tokio::test]
+async fn default_status_line_labels_estimated_context_usage() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.set_model("gpt-5.4");
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.set_token_info(Some(make_estimated_token_info(64_000, 200_000)));
+    chat.refresh_status_line();
+
+    let text = status_line_text(&chat).expect("status line text");
+    assert!(text.contains("context(est): ["), "expected estimated label: {text}");
 }
 
 #[tokio::test]

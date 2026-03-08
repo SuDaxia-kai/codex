@@ -2479,6 +2479,7 @@ mod tests {
     use codex_protocol::protocol::RateLimitWindow;
     use codex_protocol::protocol::TokenUsage;
     use codex_protocol::protocol::TokenUsageInfo;
+    use codex_protocol::protocol::TokenUsageSource;
     use pretty_assertions::assert_eq;
     use rmcp::model::Content;
     use serde_json::Value as JsonValue;
@@ -2821,6 +2822,7 @@ mod tests {
                 total_tokens: 23,
             },
             model_context_window: Some(4096),
+            source: TokenUsageSource::Actual,
         };
         let rate_limits = RateLimitSnapshot {
             limit_id: Some("codex".to_string()),

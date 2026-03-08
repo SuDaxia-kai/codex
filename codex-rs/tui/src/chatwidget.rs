@@ -133,6 +133,7 @@ use codex_protocol::protocol::StreamErrorEvent;
 use codex_protocol::protocol::TerminalInteractionEvent;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
+use codex_protocol::protocol::TokenUsageSource;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnDiffEvent;
@@ -1725,6 +1726,7 @@ impl ChatWidget {
                     total_token_usage: TokenUsage::default(),
                     last_token_usage: TokenUsage::default(),
                     model_context_window: Some(model_context_window),
+                    source: TokenUsageSource::Estimated,
                 }
             }
         };
@@ -5397,18 +5399,29 @@ impl ChatWidget {
     }
 
     fn status_line_context_preview(&self) -> String {
+        let label = self.status_line_context_label();
         match self.status_line_context_usage() {
             Some(usage) => format!(
-                "context: {}/{}",
+                "{label}: {}/{}",
                 format_tokens_compact(usage.used_tokens),
                 format_tokens_compact(usage.total_tokens)
             ),
-            None => "context: --/--".to_string(),
+            None => format!("{label}: --/--"),
+        }
+    }
+
+    fn status_line_context_label(&self) -> &'static str {
+        match self.token_info.as_ref().map(|info| info.source) {
+            Some(TokenUsageSource::Actual) => "context(actual)",
+            Some(TokenUsageSource::Estimated) | None => "context(est)",
         }
     }
 
     fn status_line_context_segment(&self) -> Vec<Span<'static>> {
-        let mut spans = vec![Span::from("context: ").dim()];
+        let mut spans = vec![
+            Span::from(self.status_line_context_label().to_string()).dim(),
+            Span::from(": ").dim(),
+        ];
 
         if let Some(usage) = self.status_line_context_usage() {
             let mut filled =

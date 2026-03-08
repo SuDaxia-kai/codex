@@ -29,6 +29,7 @@ use crate::protocol::ResumedHistory;
 use crate::protocol::TokenCountEvent;
 use crate::protocol::TokenUsage;
 use crate::protocol::TokenUsageInfo;
+use crate::protocol::TokenUsageSource;
 use crate::protocol::TurnCompleteEvent;
 use crate::protocol::UserMessageEvent;
 use crate::rollout::policy::EventPersistenceMode;
@@ -828,6 +829,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             total_tokens: 7,
         },
         model_context_window: Some(1_000),
+        source: TokenUsageSource::Actual,
     };
     let info2 = TokenUsageInfo {
         total_token_usage: TokenUsage {
@@ -845,6 +847,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             total_tokens: 35,
         },
         model_context_window: Some(2_000),
+        source: TokenUsageSource::Actual,
     };
 
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -922,6 +925,16 @@ async fn recompute_token_usage_uses_session_base_instructions() {
         .last_token_usage
         .total_tokens;
     assert_eq!(actual_tokens, expected_tokens.max(0));
+    assert_eq!(
+        session
+            .state
+            .lock()
+            .await
+            .token_info()
+            .expect("token info")
+            .source,
+        TokenUsageSource::Estimated
+    );
 }
 
 #[tokio::test]
@@ -934,6 +947,7 @@ async fn recompute_token_usage_updates_model_context_window() {
             total_token_usage: TokenUsage::default(),
             last_token_usage: TokenUsage::default(),
             model_context_window: Some(258_400),
+            source: TokenUsageSource::Actual,
         }));
     }
 

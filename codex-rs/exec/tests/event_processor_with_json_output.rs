@@ -1279,6 +1279,7 @@ fn task_complete_produces_turn_completed_with_usage() {
         total_token_usage: usage.clone(),
         last_token_usage: usage,
         model_context_window: None,
+        source: codex_protocol::protocol::TokenUsageSource::Actual,
     };
     let token_count_event = event(
         "e1",

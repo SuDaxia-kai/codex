@@ -249,6 +249,7 @@ use crate::protocol::Submission;
 use crate::protocol::TokenCountEvent;
 use crate::protocol::TokenUsage;
 use crate::protocol::TokenUsageInfo;
+use crate::protocol::TokenUsageSource;
 use crate::protocol::TurnDiffEvent;
 use crate::protocol::WarningEvent;
 use crate::rollout::RolloutRecorder;
@@ -3378,6 +3379,7 @@ impl Session {
                 total_token_usage: TokenUsage::default(),
                 last_token_usage: TokenUsage::default(),
                 model_context_window: None,
+                source: TokenUsageSource::Estimated,
             });
 
             info.last_token_usage = TokenUsage {
@@ -3391,6 +3393,7 @@ impl Session {
             if let Some(model_context_window) = turn_context.model_context_window() {
                 info.model_context_window = Some(model_context_window);
             }
+            info.source = TokenUsageSource::Estimated;
 
             state.set_token_info(Some(info));
         }

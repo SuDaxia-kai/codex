@@ -19,6 +19,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::InputModality;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
+use codex_protocol::protocol::TokenUsageSource;
 use codex_protocol::protocol::TurnContextItem;
 use codex_utils_cache::BlockingLruCache;
 use codex_utils_cache::sha1_digest;
@@ -55,7 +56,12 @@ impl ContextManager {
     pub(crate) fn new() -> Self {
         Self {
             items: Vec::new(),
-            token_info: TokenUsageInfo::new_or_append(&None, &None, None),
+            token_info: TokenUsageInfo::new_or_append(
+                &None,
+                &None,
+                None,
+                TokenUsageSource::Estimated,
+            ),
             reference_context_item: None,
         }
     }
@@ -243,6 +249,7 @@ impl ContextManager {
             &self.token_info,
             &Some(usage.clone()),
             model_context_window,
+            TokenUsageSource::Actual,
         );
     }
 

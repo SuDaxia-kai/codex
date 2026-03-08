@@ -1592,6 +1592,15 @@ pub struct TokenUsage {
     pub total_tokens: i64,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum TokenUsageSource {
+    Actual,
+    #[default]
+    Estimated,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 pub struct TokenUsageInfo {
     pub total_token_usage: TokenUsage,
@@ -1599,6 +1608,8 @@ pub struct TokenUsageInfo {
     // TODO(aibrahim): make this not optional
     #[ts(type = "number | null")]
     pub model_context_window: Option<i64>,
+    #[serde(default)]
+    pub source: TokenUsageSource,
 }
 
 impl TokenUsageInfo {
@@ -1606,6 +1617,7 @@ impl TokenUsageInfo {
         info: &Option<TokenUsageInfo>,
         last: &Option<TokenUsage>,
         model_context_window: Option<i64>,
+        source: TokenUsageSource,
     ) -> Option<Self> {
         if info.is_none() && last.is_none() {
             return None;
@@ -1617,6 +1629,7 @@ impl TokenUsageInfo {
                 total_token_usage: TokenUsage::default(),
                 last_token_usage: TokenUsage::default(),
                 model_context_window,
+                source,
             },
         };
         if let Some(last) = last {
@@ -1625,6 +1638,7 @@ impl TokenUsageInfo {
         if let Some(model_context_window) = model_context_window {
             info.model_context_window = Some(model_context_window);
         }
+        info.source = source;
         Some(info)
     }
 
@@ -1638,6 +1652,7 @@ impl TokenUsageInfo {
         let delta = (context_window - previous_total).max(0);
 
         self.model_context_window = Some(context_window);
+        self.source = TokenUsageSource::Estimated;
         self.total_token_usage = TokenUsage {
             total_tokens: context_window,
             ..TokenUsage::default()
@@ -1653,6 +1668,7 @@ impl TokenUsageInfo {
             total_token_usage: TokenUsage::default(),
             last_token_usage: TokenUsage::default(),
             model_context_window: Some(context_window),
+            source: TokenUsageSource::Estimated,
         };
         info.fill_to_context_window(context_window);
         info
@@ -3946,6 +3962,7 @@ mod tests {
             total_token_usage: TokenUsage::default(),
             last_token_usage: TokenUsage::default(),
             model_context_window: Some(258_400),
+            source: TokenUsageSource::Estimated,
         });
         let last = Some(TokenUsage {
             input_tokens: 10,
@@ -3955,10 +3972,16 @@ mod tests {
             total_tokens: 10,
         });
 
-        let info = TokenUsageInfo::new_or_append(&initial, &last, Some(128_000))
+        let info = TokenUsageInfo::new_or_append(
+            &initial,
+            &last,
+            Some(128_000),
+            TokenUsageSource::Actual,
+        )
             .expect("new_or_append should return info");
 
         assert_eq!(info.model_context_window, Some(128_000));
+        assert_eq!(info.source, TokenUsageSource::Actual);
     }
 
     #[test]
@@ -3967,6 +3990,7 @@ mod tests {
             total_token_usage: TokenUsage::default(),
             last_token_usage: TokenUsage::default(),
             model_context_window: Some(258_400),
+            source: TokenUsageSource::Actual,
         });
         let last = Some(TokenUsage {
             input_tokens: 10,
@@ -3976,9 +4000,10 @@ mod tests {
             total_tokens: 10,
         });
 
-        let info = TokenUsageInfo::new_or_append(&initial, &last, None)
+        let info = TokenUsageInfo::new_or_append(&initial, &last, None, TokenUsageSource::Actual)
             .expect("new_or_append should return info");
 
         assert_eq!(info.model_context_window, Some(258_400));
+        assert_eq!(info.source, TokenUsageSource::Actual);
     }
 }

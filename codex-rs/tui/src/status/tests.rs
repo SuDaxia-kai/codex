@@ -17,6 +17,7 @@ use codex_protocol::protocol::RateLimitWindow;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
+use codex_protocol::protocol::TokenUsageSource;
 use insta::assert_snapshot;
 use pretty_assertions::assert_eq;
 use ratatui::prelude::*;
@@ -46,6 +47,7 @@ fn token_info_for(model_slug: &str, config: &Config, usage: &TokenUsage) -> Toke
         total_token_usage: usage.clone(),
         last_token_usage: usage.clone(),
         model_context_window: context_window,
+        source: TokenUsageSource::Actual,
     }
 }
 
@@ -997,6 +999,7 @@ async fn status_context_window_uses_last_usage() {
         total_token_usage: total_usage.clone(),
         last_token_usage: last_usage,
         model_context_window: config.model_context_window,
+        source: TokenUsageSource::Actual,
     };
     let composite = new_status_output(
         &config,
