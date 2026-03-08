@@ -48,6 +48,7 @@ use crate::status::RateLimitWindowDisplay;
 use crate::status::format_directory_display;
 use crate::status::format_tokens_compact;
 use crate::status::rate_limit_snapshot_display_for_limit;
+use crate::text_formatting::center_truncate_path;
 use crate::text_formatting::proper_join;
 use crate::version::CODEX_CLI_VERSION;
 use codex_app_server_protocol::ConfigLayerSource;
@@ -158,6 +159,7 @@ use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 use tokio::sync::mpsc::UnboundedSender;
@@ -306,7 +308,10 @@ const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it l
 const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] =
-    ["model-with-reasoning", "context-remaining", "current-dir"];
+    ["model-with-reasoning", "current-dir", "context-remaining"];
+const STATUS_LINE_SEGMENT_GAP: &str = "   ";
+const STATUS_LINE_DIR_MAX_WIDTH: usize = 28;
+const STATUS_LINE_CONTEXT_BAR_WIDTH: usize = 10;
 // Track information about an in-flight exec command.
 struct RunningCommand {
     command: Vec<String>,
@@ -319,6 +324,13 @@ struct UnifiedExecProcessSummary {
     call_id: String,
     command_display: String,
     recent_chunks: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StatusLineContextUsage {
+    used_tokens: i64,
+    total_tokens: i64,
+    used_percent: i64,
 }
 
 struct UnifiedExecWaitState {
@@ -1086,19 +1098,7 @@ impl ChatWidget {
             self.request_status_line_branch(cwd);
         }
 
-        let mut parts = Vec::new();
-        for item in items {
-            if let Some(value) = self.status_line_value_for_item(&item) {
-                parts.push(value);
-            }
-        }
-
-        let line = if parts.is_empty() {
-            None
-        } else {
-            Some(Line::from(parts.join(" · ")))
-        };
-        self.set_status_line(line);
+        self.set_status_line(self.status_line_line_for_items(&items));
     }
 
     /// Records that status-line setup was canceled.
@@ -5260,14 +5260,6 @@ impl ChatWidget {
             })
     }
 
-    fn status_line_project_root_name(&self) -> Option<String> {
-        self.status_line_project_root().map(|root| {
-            root.file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_else(|| format_directory_display(&root, None))
-        })
-    }
-
     /// Resets git-branch cache state when the status-line cwd changes.
     ///
     /// The branch cache is keyed by cwd because branch lookup is performed relative to that path.
@@ -5307,18 +5299,164 @@ impl ChatWidget {
     /// Returning `None` means "omit this item for now", not "configuration error". Callers rely on
     /// this to keep partially available status lines readable while waiting for session, token, or
     /// git metadata.
+    fn status_line_line_for_items(&self, items: &[StatusLineItem]) -> Option<Line<'static>> {
+        let mut spans = Vec::new();
+        let mut has_any = false;
+        let mut context_rendered = false;
+
+        for item in items {
+            let segment = match item {
+                StatusLineItem::ModelName => Some(self.status_line_model_segment(false)),
+                StatusLineItem::ModelWithReasoning => Some(self.status_line_model_segment(true)),
+                StatusLineItem::CurrentDir => {
+                    Some(self.status_line_dir_segment(self.status_line_cwd()))
+                }
+                StatusLineItem::ProjectRoot => self
+                    .status_line_project_root()
+                    .map(|path| self.status_line_dir_segment(&path)),
+                StatusLineItem::ContextRemaining | StatusLineItem::ContextUsed => {
+                    if context_rendered {
+                        None
+                    } else {
+                        context_rendered = true;
+                        Some(self.status_line_context_segment())
+                    }
+                }
+                _ => self
+                    .status_line_value_for_item(item)
+                    .map(|value| vec![Span::from(value)]),
+            };
+
+            let Some(mut segment) = segment else {
+                continue;
+            };
+
+            if has_any {
+                spans.push(Span::from(STATUS_LINE_SEGMENT_GAP));
+            }
+            spans.append(&mut segment);
+            has_any = true;
+        }
+
+        has_any.then(|| Line::from(spans))
+    }
+
+    fn status_line_model_segment(&self, include_reasoning: bool) -> Vec<Span<'static>> {
+        let mut value = self.model_display_name().to_string();
+        if include_reasoning {
+            let label = Self::status_line_reasoning_effort_label(self.effective_reasoning_effort());
+            value.push(' ');
+            value.push_str(label);
+        }
+
+        vec![Span::from("model: ").dim(), Span::from(value)]
+    }
+
+    fn status_line_dir_text(&self, path: &Path) -> String {
+        let display = format_directory_display(path, None);
+        center_truncate_path(display.as_str(), STATUS_LINE_DIR_MAX_WIDTH)
+    }
+
+    fn status_line_dir_segment(&self, path: &Path) -> Vec<Span<'static>> {
+        vec![
+            Span::from("dir: ").dim(),
+            Span::from(self.status_line_dir_text(path)),
+        ]
+    }
+
+    fn status_line_context_usage(&self) -> Option<StatusLineContextUsage> {
+        let total_tokens = self.status_line_context_window_size()?;
+        if total_tokens <= 0 {
+            return None;
+        }
+
+        let used_tokens = self
+            .status_line_total_usage()
+            .tokens_in_context_window()
+            .clamp(0, total_tokens);
+        let used_percent =
+            (((used_tokens * 100) + (total_tokens / 2)) / total_tokens).clamp(0, 100);
+
+        Some(StatusLineContextUsage {
+            used_tokens,
+            total_tokens,
+            used_percent,
+        })
+    }
+
+    fn status_line_context_style(used_percent: i64) -> Style {
+        match used_percent {
+            85..=100 => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            70..=84 => Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+            _ => Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        }
+    }
+
+    fn status_line_context_preview(&self) -> String {
+        match self.status_line_context_usage() {
+            Some(usage) => format!(
+                "context: {}/{}",
+                format_tokens_compact(usage.used_tokens),
+                format_tokens_compact(usage.total_tokens)
+            ),
+            None => "context: --/--".to_string(),
+        }
+    }
+
+    fn status_line_context_segment(&self) -> Vec<Span<'static>> {
+        let mut spans = vec![Span::from("context: ").dim()];
+
+        if let Some(usage) = self.status_line_context_usage() {
+            let mut filled =
+                ((usage.used_percent as usize * STATUS_LINE_CONTEXT_BAR_WIDTH) + 50) / 100;
+            if usage.used_percent > 0 && filled == 0 {
+                filled = 1;
+            }
+            filled = filled.min(STATUS_LINE_CONTEXT_BAR_WIDTH);
+            let empty = STATUS_LINE_CONTEXT_BAR_WIDTH.saturating_sub(filled);
+            let emphasis = Self::status_line_context_style(usage.used_percent);
+            let used_total = format!(
+                "{}/{}",
+                format_tokens_compact(usage.used_tokens),
+                format_tokens_compact(usage.total_tokens)
+            );
+
+            spans.push(Span::from("["));
+            spans.push(Span::styled("█".repeat(filled), emphasis));
+            spans.push(Span::styled(
+                "░".repeat(empty),
+                Style::default().fg(Color::DarkGray),
+            ));
+            spans.push(Span::from("]"));
+            spans.push(Span::from(" "));
+            spans.push(Span::styled(used_total, emphasis));
+            return spans;
+        }
+
+        spans.push(Span::from("[----------] ").dim());
+        spans.push(Span::from("--/--").dim());
+        spans
+    }
+
     fn status_line_value_for_item(&self, item: &StatusLineItem) -> Option<String> {
         match item {
-            StatusLineItem::ModelName => Some(self.model_display_name().to_string()),
+            StatusLineItem::ModelName => Some(format!("model: {}", self.model_display_name())),
             StatusLineItem::ModelWithReasoning => {
                 let label =
                     Self::status_line_reasoning_effort_label(self.effective_reasoning_effort());
-                Some(format!("{} {label}", self.model_display_name()))
+                Some(format!("model: {} {label}", self.model_display_name()))
             }
-            StatusLineItem::CurrentDir => {
-                Some(format_directory_display(self.status_line_cwd(), None))
-            }
-            StatusLineItem::ProjectRoot => self.status_line_project_root_name(),
+            StatusLineItem::CurrentDir => Some(format!(
+                "dir: {}",
+                self.status_line_dir_text(self.status_line_cwd())
+            )),
+            StatusLineItem::ProjectRoot => self
+                .status_line_project_root()
+                .map(|path| format!("dir: {}", self.status_line_dir_text(&path))),
             StatusLineItem::GitBranch => self.status_line_branch.clone(),
             StatusLineItem::UsedTokens => {
                 let usage = self.status_line_total_usage();
@@ -5329,12 +5467,9 @@ impl ChatWidget {
                     Some(format!("{} used", format_tokens_compact(total)))
                 }
             }
-            StatusLineItem::ContextRemaining => self
-                .status_line_context_remaining_percent()
-                .map(|remaining| format!("{remaining}% left")),
-            StatusLineItem::ContextUsed => self
-                .status_line_context_used_percent()
-                .map(|used| format!("{used}% used")),
+            StatusLineItem::ContextRemaining | StatusLineItem::ContextUsed => {
+                Some(self.status_line_context_preview())
+            }
             StatusLineItem::FiveHourLimit => {
                 let window = self
                     .rate_limit_snapshots_by_limit_id
@@ -5385,28 +5520,6 @@ impl ChatWidget {
             .as_ref()
             .and_then(|info| info.model_context_window)
             .or(self.config.model_context_window)
-    }
-
-    fn status_line_context_remaining_percent(&self) -> Option<i64> {
-        let Some(context_window) = self.status_line_context_window_size() else {
-            return Some(100);
-        };
-        let default_usage = TokenUsage::default();
-        let usage = self
-            .token_info
-            .as_ref()
-            .map(|info| &info.last_token_usage)
-            .unwrap_or(&default_usage);
-        Some(
-            usage
-                .percent_of_context_window_remaining(context_window)
-                .clamp(0, 100),
-        )
-    }
-
-    fn status_line_context_used_percent(&self) -> Option<i64> {
-        let remaining = self.status_line_context_remaining_percent().unwrap_or(100);
-        Some((100 - remaining).clamp(0, 100))
     }
 
     fn status_line_total_usage(&self) -> TokenUsage {
@@ -8465,6 +8578,11 @@ impl ChatWidget {
     #[cfg(test)]
     pub(crate) fn status_line_text(&self) -> Option<String> {
         self.bottom_pane.status_line_text()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn status_line(&self) -> Option<Line<'static>> {
+        self.bottom_pane.status_line()
     }
 
     pub(crate) fn clear_token_usage(&mut self) {

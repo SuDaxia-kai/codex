@@ -1130,6 +1130,11 @@ impl ChatComposer {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn status_line(&self) -> Option<Line<'static>> {
+        self.status_line_value.clone()
+    }
+
     pub(crate) fn local_images(&self) -> Vec<LocalImageAttachment> {
         self.attached_images
             .iter()

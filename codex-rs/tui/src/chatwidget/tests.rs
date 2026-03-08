@@ -2002,6 +2002,17 @@ fn status_line_text(chat: &ChatWidget) -> Option<String> {
     chat.status_line_text()
 }
 
+fn render_chat_screen(chat: &mut ChatWidget, width: u16) -> String {
+    let height = chat.desired_height(width);
+    let mut terminal =
+        ratatui::Terminal::new(VT100Backend::new(width, height)).expect("create terminal");
+    terminal.set_viewport_area(Rect::new(0, 0, width, height));
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("render chat");
+    terminal.backend().vt100().screen().contents()
+}
+
 fn make_token_info(total_tokens: i64, context_window: i64) -> TokenUsageInfo {
     fn usage(total_tokens: i64) -> TokenUsage {
         TokenUsage {
@@ -9377,6 +9388,91 @@ async fn status_line_fast_mode_footer_snapshot() {
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw fast-mode footer");
     assert_snapshot!("status_line_fast_mode_footer", terminal.backend());
+}
+
+#[tokio::test]
+async fn default_status_line_uses_model_dir_context_summary() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.set_model("gpt-5.4");
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.current_cwd = Some(PathBuf::from(
+        "/Users/suhaokai/git/openai-codex/projects/example/deeply/nested/worktree",
+    ));
+    chat.set_token_info(Some(make_token_info(64_000, 200_000)));
+    chat.refresh_status_line();
+
+    let text = status_line_text(&chat).expect("status line text");
+    assert!(text.contains("model: gpt-5.4 high"));
+    assert!(text.contains("dir: "));
+    assert!(text.contains("context: ["));
+    assert!(text.contains("64K/200K"));
+
+    let model_idx = text.find("model:").expect("model segment");
+    let dir_idx = text.find("dir:").expect("dir segment");
+    let context_idx = text.find("context:").expect("context segment");
+    assert!(model_idx < dir_idx);
+    assert!(dir_idx < context_idx);
+    assert!(
+        text.contains("…"),
+        "expected long directory to use center truncation: {text}"
+    );
+}
+
+#[tokio::test]
+async fn default_status_line_footer_renders_context_progress_bar() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.show_welcome_banner = false;
+    chat.set_model("gpt-5.4");
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.set_token_info(Some(make_token_info(64_000, 200_000)));
+    chat.refresh_status_line();
+
+    let screen = render_chat_screen(&mut chat, 110);
+    let collapsed = screen.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        collapsed.contains("model: gpt-5.4 high"),
+        "expected rendered footer to include model label: {collapsed}"
+    );
+    assert!(
+        collapsed.contains("dir:"),
+        "expected rendered footer to include dir label: {collapsed}"
+    );
+    assert!(
+        collapsed.contains("context: ["),
+        "expected rendered footer to include context progress bar: {collapsed}"
+    );
+    assert!(
+        collapsed.contains("64K/200K"),
+        "expected rendered footer to include used/total tokens: {collapsed}"
+    );
+}
+
+#[tokio::test]
+async fn status_line_context_warning_uses_red_style_near_limit() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.set_model("gpt-5.4");
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.set_token_info(Some(make_token_info(180_000, 200_000)));
+    chat.refresh_status_line();
+
+    let line = chat.status_line().expect("status line");
+    let context_spans = line
+        .spans
+        .iter()
+        .filter(|span| span.content.contains("█") || span.content.contains("180K/200K"))
+        .collect::<Vec<_>>();
+    assert!(
+        !context_spans.is_empty(),
+        "expected context spans in status line: {:?}",
+        line.spans
+    );
+    assert!(
+        context_spans
+            .iter()
+            .any(|span| span.style.fg == Some(Color::Red)),
+        "expected near-limit context spans to render in red: {:?}",
+        context_spans
+    );
 }
 
 #[tokio::test]
