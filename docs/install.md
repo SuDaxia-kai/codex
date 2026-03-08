@@ -49,6 +49,22 @@ just test
 cargo test --all-features
 ```
 
+### Ubuntu source install with backup
+
+If you want to build your current checkout, back up the existing global `codex`,
+and install the new binary in one step:
+
+```bash
+git clone <your-fork-url>
+cd codex
+git checkout feat/cli-footer-context-bar
+./scripts/install/install-ubuntu-source.sh
+```
+
+By default the script overwrites the currently resolved `codex` binary, or
+installs to `/usr/local/bin/codex` if none exists yet. Override the destination
+with `CODEX_INSTALL_PATH=/some/path/codex` or `--install-path /some/path/codex`.
+
 ## Tracing / verbose logging
 
 Codex is written in Rust, so it honors the `RUST_LOG` environment variable to configure its logging behavior.
