@@ -5485,8 +5485,10 @@ impl ChatWidget {
         }
 
         let used_tokens = self
-            .status_line_total_usage()
-            .tokens_in_context_window()
+            .token_info
+            .as_ref()
+            .map(|info| info.last_token_usage.tokens_in_context_window())
+            .unwrap_or_default()
             .clamp(0, total_tokens);
         let used_percent =
             (((used_tokens * 100) + (total_tokens / 2)) / total_tokens).clamp(0, 100);

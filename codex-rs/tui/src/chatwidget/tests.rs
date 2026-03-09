@@ -9668,6 +9668,36 @@ async fn default_status_line_labels_actual_context_usage() {
 }
 
 #[tokio::test]
+async fn status_line_context_uses_current_context_tokens() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.set_model("gpt-5.4");
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.set_token_info(Some(TokenUsageInfo {
+        total_token_usage: TokenUsage {
+            total_tokens: 258_000,
+            ..TokenUsage::default()
+        },
+        last_token_usage: TokenUsage {
+            total_tokens: 57_600,
+            ..TokenUsage::default()
+        },
+        model_context_window: Some(258_000),
+        source: TokenUsageSource::Actual,
+    }));
+    chat.refresh_status_line();
+
+    let text = status_line_text(&chat).expect("status line text");
+    assert!(
+        text.contains("57.6K/258K"),
+        "expected status line to use current context usage, got: {text}"
+    );
+    assert!(
+        !text.contains("258K/258K"),
+        "expected status line to avoid cumulative context total, got: {text}"
+    );
+}
+
+#[tokio::test]
 async fn default_status_line_labels_estimated_context_usage() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.set_model("gpt-5.4");
