@@ -9617,6 +9617,72 @@ async fn default_status_line_uses_model_dir_context_summary() {
 }
 
 #[tokio::test]
+async fn default_status_line_uses_colored_icon_labels() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.set_model("gpt-5.4");
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.set_approval_policy(AskForApproval::OnRequest);
+    chat.set_sandbox_policy(SandboxPolicy::new_workspace_write_policy())
+        .expect("set sandbox policy");
+    chat.current_cwd = Some(PathBuf::from("/Users/suhaokai/git/openai-codex"));
+    chat.set_token_info(Some(make_token_info(64_000, 200_000)));
+    chat.refresh_status_line();
+
+    let line = chat.status_line().expect("status line");
+    let text = line
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+
+    assert!(
+        text.contains("◉ model: gpt-5.4 high"),
+        "expected model label icon in status line: {text}"
+    );
+    assert!(
+        text.contains("⌂ dir: "),
+        "expected dir label icon in status line: {text}"
+    );
+    assert!(
+        text.contains("◇ permission: write/ask"),
+        "expected permission label icon in status line: {text}"
+    );
+    assert!(
+        text.contains("◔ context(actual): ["),
+        "expected context label icon in status line: {text}"
+    );
+
+    assert!(
+        line.spans
+            .iter()
+            .any(|span| span.content == "◉ model: " && span.style.fg == Some(Color::Cyan)),
+        "expected model label to render in cyan: {:?}",
+        line.spans
+    );
+    assert!(
+        line.spans
+            .iter()
+            .any(|span| span.content == "⌂ dir: " && span.style.fg == Some(Color::LightBlue)),
+        "expected dir label to render in light blue: {:?}",
+        line.spans
+    );
+    assert!(
+        line.spans
+            .iter()
+            .any(|span| span.content == "◇ permission: " && span.style.fg == Some(Color::Yellow)),
+        "expected permission label to render in yellow: {:?}",
+        line.spans
+    );
+    assert!(
+        line.spans
+            .iter()
+            .any(|span| span.content == "◔ context(actual): " && span.style.fg == Some(Color::Magenta)),
+        "expected context label to render in magenta: {:?}",
+        line.spans
+    );
+}
+
+#[tokio::test]
 async fn default_status_line_footer_renders_context_progress_bar() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.show_welcome_banner = false;

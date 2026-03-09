@@ -5429,7 +5429,10 @@ impl ChatWidget {
             value.push_str(label);
         }
 
-        vec![Span::from("model: ").dim(), Span::from(value)]
+        vec![
+            Self::status_line_label_span("◉ model", Color::Cyan),
+            Span::from(value),
+        ]
     }
 
     fn status_line_dir_text(&self, path: &Path) -> String {
@@ -5439,16 +5442,23 @@ impl ChatWidget {
 
     fn status_line_dir_segment(&self, path: &Path) -> Vec<Span<'static>> {
         vec![
-            Span::from("dir: ").dim(),
+            Self::status_line_label_span("⌂ dir", Color::LightBlue),
             Span::from(self.status_line_dir_text(path)),
         ]
     }
 
     fn status_line_permission_segment(&self) -> Vec<Span<'static>> {
         vec![
-            Span::from("permission: ").dim(),
+            Self::status_line_label_span("◇ permission", Color::Yellow),
             Span::from(self.status_line_permission_summary()),
         ]
+    }
+
+    fn status_line_label_span(label: &str, color: Color) -> Span<'static> {
+        Span::styled(
+            format!("{label}: "),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        )
     }
 
     fn status_line_permission_summary(&self) -> String {
@@ -5513,7 +5523,7 @@ impl ChatWidget {
     }
 
     fn status_line_context_preview(&self) -> String {
-        let label = self.status_line_context_label();
+        let label = self.status_line_context_preview_label();
         match self.status_line_context_usage() {
             Some(usage) => format!(
                 "{label}: {}/{}",
@@ -5531,11 +5541,15 @@ impl ChatWidget {
         }
     }
 
+    fn status_line_context_preview_label(&self) -> String {
+        format!("◔ {}", self.status_line_context_label())
+    }
+
     fn status_line_context_segment(&self) -> Vec<Span<'static>> {
-        let mut spans = vec![
-            Span::from(self.status_line_context_label().to_string()).dim(),
-            Span::from(": ").dim(),
-        ];
+        let mut spans = vec![Self::status_line_label_span(
+            &self.status_line_context_preview_label(),
+            Color::Magenta,
+        )];
 
         if let Some(usage) = self.status_line_context_usage() {
             let mut filled =
@@ -5571,23 +5585,23 @@ impl ChatWidget {
 
     fn status_line_value_for_item(&self, item: &StatusLineItem) -> Option<String> {
         match item {
-            StatusLineItem::ModelName => Some(format!("model: {}", self.model_display_name())),
+            StatusLineItem::ModelName => Some(format!("◉ model: {}", self.model_display_name())),
             StatusLineItem::ModelWithReasoning => {
                 let label =
                     Self::status_line_reasoning_effort_label(self.effective_reasoning_effort());
-                Some(format!("model: {} {label}", self.model_display_name()))
+                Some(format!("◉ model: {} {label}", self.model_display_name()))
             }
             StatusLineItem::CurrentDir => Some(format!(
-                "dir: {}",
+                "⌂ dir: {}",
                 self.status_line_dir_text(self.status_line_cwd())
             )),
             StatusLineItem::Permission => Some(format!(
-                "permission: {}",
+                "◇ permission: {}",
                 self.status_line_permission_summary()
             )),
             StatusLineItem::ProjectRoot => self
                 .status_line_project_root()
-                .map(|path| format!("dir: {}", self.status_line_dir_text(&path))),
+                .map(|path| format!("⌂ dir: {}", self.status_line_dir_text(&path))),
             StatusLineItem::GitBranch => self.status_line_branch.clone(),
             StatusLineItem::UsedTokens => {
                 let usage = self.status_line_total_usage();
