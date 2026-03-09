@@ -9414,6 +9414,9 @@ async fn default_status_line_uses_model_dir_context_summary() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.set_model("gpt-5.4");
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.set_approval_policy(AskForApproval::OnRequest);
+    chat.set_sandbox_policy(SandboxPolicy::new_workspace_write_policy())
+        .expect("set sandbox policy");
     chat.current_cwd = Some(PathBuf::from(
         "/Users/suhaokai/git/openai-codex/projects/example/deeply/nested/worktree",
     ));
@@ -9423,14 +9426,17 @@ async fn default_status_line_uses_model_dir_context_summary() {
     let text = status_line_text(&chat).expect("status line text");
     assert!(text.contains("model: gpt-5.4 high"));
     assert!(text.contains("dir: "));
+    assert!(text.contains("permission: write/ask"));
     assert!(text.contains("context(actual): ["));
     assert!(text.contains("64K/200K"));
 
     let model_idx = text.find("model:").expect("model segment");
     let dir_idx = text.find("dir:").expect("dir segment");
+    let permission_idx = text.find("permission:").expect("permission segment");
     let context_idx = text.find("context(actual):").expect("context segment");
     assert!(model_idx < dir_idx);
-    assert!(dir_idx < context_idx);
+    assert!(dir_idx < permission_idx);
+    assert!(permission_idx < context_idx);
     assert!(
         text.contains("…"),
         "expected long directory to use center truncation: {text}"
@@ -9443,10 +9449,13 @@ async fn default_status_line_footer_renders_context_progress_bar() {
     chat.show_welcome_banner = false;
     chat.set_model("gpt-5.4");
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.set_approval_policy(AskForApproval::OnRequest);
+    chat.set_sandbox_policy(SandboxPolicy::new_workspace_write_policy())
+        .expect("set sandbox policy");
     chat.set_token_info(Some(make_token_info(64_000, 200_000)));
     chat.refresh_status_line();
 
-    let screen = render_chat_screen(&mut chat, 110);
+    let screen = render_chat_screen(&mut chat, 140);
     let collapsed = screen.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
         collapsed.contains("model: gpt-5.4 high"),
@@ -9455,6 +9464,10 @@ async fn default_status_line_footer_renders_context_progress_bar() {
     assert!(
         collapsed.contains("dir:"),
         "expected rendered footer to include dir label: {collapsed}"
+    );
+    assert!(
+        collapsed.contains("permission: write/ask"),
+        "expected rendered footer to include permission label: {collapsed}"
     );
     assert!(
         collapsed.contains("context(actual): ["),
@@ -9475,7 +9488,10 @@ async fn default_status_line_labels_actual_context_usage() {
     chat.refresh_status_line();
 
     let text = status_line_text(&chat).expect("status line text");
-    assert!(text.contains("context(actual): ["), "expected actual label: {text}");
+    assert!(
+        text.contains("context(actual): ["),
+        "expected actual label: {text}"
+    );
 }
 
 #[tokio::test]
@@ -9487,7 +9503,10 @@ async fn default_status_line_labels_estimated_context_usage() {
     chat.refresh_status_line();
 
     let text = status_line_text(&chat).expect("status line text");
-    assert!(text.contains("context(est): ["), "expected estimated label: {text}");
+    assert!(
+        text.contains("context(est): ["),
+        "expected estimated label: {text}"
+    );
 }
 
 #[tokio::test]

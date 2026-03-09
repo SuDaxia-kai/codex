@@ -12,6 +12,7 @@
 //! - Model information (name, reasoning level)
 //! - Directory paths (current dir, project root)
 //! - Git information (branch name)
+//! - Permission mode (sandbox + approval)
 //! - Context usage (remaining %, used %, window size)
 //! - Usage limits (5-hour, weekly)
 //! - Session info (ID, tokens used)
@@ -63,6 +64,9 @@ pub(crate) enum StatusLineItem {
     /// Current git branch name (if in a repository).
     GitBranch,
 
+    /// Current permission mode as sandbox/approval.
+    Permission,
+
     /// Percentage of context window remaining.
     ContextRemaining,
 
@@ -106,6 +110,7 @@ impl StatusLineItem {
             StatusLineItem::CurrentDir => "Current working directory",
             StatusLineItem::ProjectRoot => "Project root directory (omitted when unavailable)",
             StatusLineItem::GitBranch => "Current Git branch (omitted when unavailable)",
+            StatusLineItem::Permission => "Current permission mode as sandbox/approval",
             StatusLineItem::ContextRemaining => {
                 "Percentage of context window remaining (omitted when unknown)"
             }
@@ -352,11 +357,13 @@ mod tests {
             Some(&[
                 StatusLineItem::ModelName.to_string(),
                 StatusLineItem::CurrentDir.to_string(),
+                StatusLineItem::Permission.to_string(),
                 StatusLineItem::GitBranch.to_string(),
             ]),
             StatusLinePreviewData::from_iter([
                 (StatusLineItem::ModelName, "gpt-5-codex".to_string()),
                 (StatusLineItem::CurrentDir, "~/codex-rs".to_string()),
+                (StatusLineItem::Permission, "write/ask".to_string()),
                 (
                     StatusLineItem::GitBranch,
                     "jif/statusline-preview".to_string(),

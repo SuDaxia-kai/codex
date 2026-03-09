@@ -308,8 +308,12 @@ use strum::IntoEnumIterator;
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it locally";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
-const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] =
-    ["model-with-reasoning", "current-dir", "context-remaining"];
+const DEFAULT_STATUS_LINE_ITEMS: [&str; 4] = [
+    "model-with-reasoning",
+    "current-dir",
+    "permission",
+    "context-remaining",
+];
 const STATUS_LINE_SEGMENT_GAP: &str = "   ";
 const STATUS_LINE_DIR_MAX_WIDTH: usize = 28;
 const STATUS_LINE_CONTEXT_BAR_WIDTH: usize = 10;
@@ -5313,6 +5317,7 @@ impl ChatWidget {
                 StatusLineItem::CurrentDir => {
                     Some(self.status_line_dir_segment(self.status_line_cwd()))
                 }
+                StatusLineItem::Permission => Some(self.status_line_permission_segment()),
                 StatusLineItem::ProjectRoot => self
                     .status_line_project_root()
                     .map(|path| self.status_line_dir_segment(&path)),
@@ -5364,6 +5369,40 @@ impl ChatWidget {
             Span::from("dir: ").dim(),
             Span::from(self.status_line_dir_text(path)),
         ]
+    }
+
+    fn status_line_permission_segment(&self) -> Vec<Span<'static>> {
+        vec![
+            Span::from("permission: ").dim(),
+            Span::from(self.status_line_permission_summary()),
+        ]
+    }
+
+    fn status_line_permission_summary(&self) -> String {
+        format!(
+            "{}/{}",
+            Self::status_line_sandbox_label(self.config.permissions.sandbox_policy.get()),
+            Self::status_line_approval_label(self.config.permissions.approval_policy.value())
+        )
+    }
+
+    fn status_line_sandbox_label(policy: &SandboxPolicy) -> &'static str {
+        match policy {
+            SandboxPolicy::ReadOnly { .. } => "read",
+            SandboxPolicy::WorkspaceWrite { .. } => "write",
+            SandboxPolicy::DangerFullAccess => "full",
+            SandboxPolicy::ExternalSandbox { .. } => "sandbox",
+        }
+    }
+
+    fn status_line_approval_label(policy: AskForApproval) -> &'static str {
+        match policy {
+            AskForApproval::OnRequest => "ask",
+            AskForApproval::Never => "never",
+            AskForApproval::OnFailure => "fail",
+            AskForApproval::UnlessTrusted => "safe",
+            AskForApproval::Reject(_) => "reject",
+        }
     }
 
     fn status_line_context_usage(&self) -> Option<StatusLineContextUsage> {
@@ -5466,6 +5505,10 @@ impl ChatWidget {
             StatusLineItem::CurrentDir => Some(format!(
                 "dir: {}",
                 self.status_line_dir_text(self.status_line_cwd())
+            )),
+            StatusLineItem::Permission => Some(format!(
+                "permission: {}",
+                self.status_line_permission_summary()
             )),
             StatusLineItem::ProjectRoot => self
                 .status_line_project_root()
